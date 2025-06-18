@@ -1,0 +1,19 @@
+[package]
+name = "navajo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.4" }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid" ] }
+base64 = { version = "0.22" }
+aes-gcm = { version = "0.10" }
+rand = { version = "0.8" }
+thiserror = { version = "2" }
+dotenv = { version = "0.15" }
+anyhow = "1.0.98"
