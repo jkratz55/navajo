@@ -9,11 +9,13 @@ use axum::response::{IntoResponse, Response};
 use chrono::{Utc, Duration, DateTime};
 use serde::{Deserialize, Serialize};
 use tracing::error;
+use validator::{Validate, ValidationError};
 use crate::app_state::AppState;
 use crate::error::AppError;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 pub struct CreateSecretRequest {
+    #[validate(length(min = 1, max = 10000))]
     value: String,
 }
 
@@ -32,6 +34,9 @@ pub async fn create_secret(
     State(state): State<AppState>,
     Json(secret): Json<CreateSecretRequest>,
 ) -> Result<Response, AppError> {
+
+    //secret.validate().map_err()
+    //secret.validate().map_err(|e| {})
 
     let id = Uuid::new_v4();
     let expires_at = Utc::now() + Duration::hours(1);
