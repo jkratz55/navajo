@@ -17,3 +17,5 @@ rand = { version = "0.8" }
 thiserror = { version = "2" }
 dotenv = { version = "0.15" }
 anyhow = "1.0.98"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["json", "chrono"]}

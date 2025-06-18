@@ -2,12 +2,13 @@ use std::ops::Add;
 use axum::{extract::{Path, State}, Json};
 use uuid::Uuid;
 use rand::RngCore;
-use aes_gcm::aead::{Aead, Nonce};
+use aes_gcm::aead::{Aead};
 use aes_gcm::aead::generic_array::GenericArray;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::{Utc, Duration, DateTime};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 use crate::app_state::AppState;
 use crate::error::AppError;
 
@@ -89,12 +90,14 @@ pub async fn retrieve_secret(
     // If the delete fails, it's not an issue as there is a process that periodically
     // runs to clean up expired and claimed secrets.
     if record.claimed || Utc::now() > record.expires_at {
-        sqlx::query!(
+        let del_res = sqlx::query!(
             "DELETE FROM secrets WHERE id = $1", uuid
         )
         .execute(&state.db)
-        .await
-        .ok();
+        .await;
+        if let Err(_) = del_res {
+            error!("Failed to delete expired secret: {}", uuid);
+        }
         return Err(AppError::Expired);
     }
 
