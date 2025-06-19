@@ -2,21 +2,16 @@ mod error;
 mod app_state;
 mod crypto;
 mod handlers;
+mod metrics;
 
-use std::future::ready;
-use std::time::Instant;
-use axum::{middleware, Router};
-use axum::extract::{MatchedPath, Request};
-use axum::middleware::Next;
-use axum::response::IntoResponse;
-use axum::routing::{get, post};
-use dotenv::dotenv;
-use sqlx::postgres::PgPoolOptions;
-use tracing::{info, Level};
-use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
-use tokio::join;
 use crate::app_state::AppState;
 use crate::handlers::{create_secret, retrieve_secret};
+use axum::routing::{get, post};
+use axum::{middleware, Router};
+use dotenv::dotenv;
+use sqlx::postgres::PgPoolOptions;
+use tokio::join;
+use tracing::{info, Level};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -53,68 +48,27 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/secret", post(create_secret))
         .route("/secret/{id}", get(retrieve_secret))
-        .route_layer(middleware::from_fn(record_metrics))
+        .route_layer(middleware::from_fn(metrics::record_metrics))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
         .await?;
-    
-    let metrics = metrics_app();
+
+    let metric_app = metrics::metrics_app();
     let prom_listener = tokio::net::TcpListener::bind("127.0.0.1:8082")
         .await?;
 
     info!("Starting http server on {}", listener.local_addr()?);
 
     // Run the main application server and prometheus server concurrently
-    let (mainServer, promServer) = join!(
+    let (main_server, prom_server) = join!(
         axum::serve(listener, app),
-        axum::serve(prom_listener, metrics)
+        axum::serve(prom_listener, metric_app)
     );
 
     // Handle errors from either server
-    mainServer?;
-    promServer?;
+    main_server?;
+    prom_server?;
     
     Ok(())
-}
-
-fn metrics_app() -> Router {
-    const EXPONENTIAL_SECONDS: &[f64] = &[0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.000];
-    
-    let prom_handle = PrometheusBuilder::new()
-        .set_buckets_for_metric(
-            Matcher::Full("http_requests_duration_seconds".to_string()),
-            EXPONENTIAL_SECONDS
-        )
-        .unwrap()
-        .install_recorder()
-        .unwrap();
-    
-    Router::new().route("/metrics", get(move || ready(prom_handle.render())))
-}
-
-async fn record_metrics(req: Request, next: Next) -> impl IntoResponse {
-    let start = Instant::now();
-    let path = if let Some(matched_path) = req.extensions().get::<MatchedPath>() {
-        matched_path.as_str().to_owned()
-    } else {
-        req.uri().path().to_owned()
-    };
-    let method = req.method().clone();
-    
-    let response = next.run(req).await;
-    
-    let latency = start.elapsed().as_secs_f64();
-    let status = response.status().as_u16().to_string();
-
-    let labels = [
-        ("method", method.to_string()),
-        ("path", path),
-        ("status", status),
-    ];
-
-    metrics::counter!("http_requests_total", &labels).increment(1);
-    metrics::histogram!("http_requests_duration_seconds", &labels).record(latency);
-    
-    response
 }

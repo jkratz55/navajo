@@ -1,6 +1,6 @@
-use aes_gcm::{Aes256Gcm, aead::KeyInit};
+use aes_gcm::{aead::KeyInit, Aes256Gcm};
+use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine};
-use anyhow::{Result, anyhow};
 
 pub fn build_cipher(key_b64: &str) -> Result<Aes256Gcm> {
     let key_bytes = general_purpose::STANDARD.decode(key_b64)

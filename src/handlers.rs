@@ -7,6 +7,7 @@ use aes_gcm::aead::generic_array::GenericArray;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::{Utc, Duration, DateTime};
+use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use validator::{Validate, ValidationError};
@@ -35,9 +36,6 @@ pub async fn create_secret(
     Json(secret): Json<CreateSecretRequest>,
 ) -> Result<Response, AppError> {
 
-    //secret.validate().map_err()
-    //secret.validate().map_err(|e| {})
-
     let id = Uuid::new_v4();
     let expires_at = Utc::now() + Duration::hours(1);
 
@@ -48,17 +46,21 @@ pub async fn create_secret(
     let ciphertext = state.cipher
         .encrypt(nonce, secret.value.as_bytes())
         .map_err(|_| AppError::InternalServerError)?;
-
-    sqlx::query!(
+    
+    let fut = async move {
+        sqlx::query!(
         "INSERT INTO secrets (id, secret, nonce, expires_at) VALUES ($1, $2, $3, $4)",
         id,
         &ciphertext,
         &nonce_bytes,
         expires_at,
     )
-        .execute(&state.db)
-        .await
-        .map_err(|_| AppError::InternalServerError)?;
+            .execute(&state.db)
+            .await
+            .map_err(|_| AppError::InternalServerError)
+    }.boxed();
+
+    crate::metrics::execute_query("insert_secret", fut).await.await?;
 
     let location = format!("/secret/{}", id);
 
